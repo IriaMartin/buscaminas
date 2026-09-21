@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Buscaminas</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;justify-content:center;align-items:center;
+       font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#eef2f7;color:#172033}
+  .game{background:#fff;padding:24px;border-radius:18px;box-shadow:0 12px 35px #0002;width:min(92vw,520px)}
+  h1{text-align:center;margin:0 0 16px;font-size:30px}
+  .top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px}
+  .counter{background:#172033;color:#fff;padding:8px 12px;border-radius:9px;font-weight:700;min-width:75px;text-align:center}
+  button{font:inherit}
+  #reset{border:0;background:#4f7cff;color:white;border-radius:9px;padding:8px 13px;cursor:pointer;font-weight:700}
+  #reset:hover{filter:brightness(.95)}
+  #board{display:grid;grid-template-columns:repeat(10,1fr);gap:3px;background:#aab4c5;padding:4px;border-radius:8px;user-select:none}
+  .cell{aspect-ratio:1;border:0;border-radius:3px;background:#cbd3df;font-weight:800;font-size:clamp(12px,3.5vw,19px);
+        cursor:pointer;color:#172033;padding:0}
+  .cell:hover:not(.open){background:#b9c4d3}
+  .cell.open{background:#edf0f4;cursor:default}
+  .cell.mine{background:#ff8b8b}
+  .cell.flag{background:#ffe29a}
+  .n1{color:#2563eb}.n2{color:#16803c}.n3{color:#dc2626}.n4{color:#6d28d9}
+  .n5{color:#92400e}.n6{color:#0891b2}.n7{color:#111827}.n8{color:#64748b}
+  #status{text-align:center;font-weight:700;min-height:25px;margin-top:14px}
+  .help{text-align:center;color:#667085;font-size:13px;margin:8px 0 0}
+</style>
+</head>
+<body>
+<div class="game">
+  <h1>💣 Buscaminas</h1>
+  <div class="top">
+    <div class="counter">💣 <span id="minesLeft">15</span></div>
+    <button id="reset">🔄 Nueva partida</button>
+    <div class="counter">⏱️ <span id="time">0</span></div>
+  </div>
+  <div id="board"></div>
+  <div id="status"></div>
+  <div class="help">Clic izquierdo: descubrir · clic derecho: poner/quitar bandera</div>
+</div>
+
+<script>
+const SIZE=10, MINES=15;
+let board=[], gameOver=false, flags=0, seconds=0, timer=null;
+
+const boardEl=document.getElementById('board');
+const statusEl=document.getElementById('status');
+const minesEl=document.getElementById('minesLeft');
+const timeEl=document.getElementById('time');
+
+function newGame(){
+  clearInterval(timer); seconds=0; timeEl.textContent='0';
+  gameOver=false; flags=0; statusEl.textContent='';
+  board=Array.from({length:SIZE},(_,r)=>Array.from({length:SIZE},(_,c)=>({
+    r,c,mine:false,open:false,flag:false,n:0
+  })));
+
+  let placed=0;
+  while(placed<MINES){
+    const r=Math.floor(Math.random()*SIZE), c=Math.floor(Math.random()*SIZE);
+    if(!board[r][c].mine){board[r][c].mine=true;placed++;}
+  }
+  for(let r=0;r<SIZE;r++) for(let c=0;c<SIZE;c++){
+    if(board[r][c].mine) continue;
+    board[r][c].n=neighbors(r,c).filter(x=>x.mine).length;
+  }
+  render();
+  minesEl.textContent=MINES;
+}
+
+function neighbors(r,c){
+  const a=[];
+  for(let dr=-1;dr<=1;dr++) for(let dc=-1;dc<=1;dc++){
+    if(!dr&&!dc) continue;
+    const rr=r+dr,cc=c+dc;
+    if(rr>=0&&rr<SIZE&&cc>=0&&cc<SIZE)a.push(board[rr][cc]);
+  }
+  return a;
+}
+
+function startTimer(){
+  if(timer) return;
+  timer=setInterval(()=>{seconds++;timeEl.textContent=seconds},1000);
+}
+
+function render(){
+  boardEl.innerHTML='';
+  for(const row of board) for(const cell of row){
+    const b=document.createElement('button');
+    b.className='cell';
+    if(cell.open){
+      b.classList.add('open');
+      if(cell.mine){b.classList.add('mine');b.textContent='💣';}
+      else if(cell.n){b.textContent=cell.n;b.classList.add('n'+cell.n);}
+    } else if(cell.flag){
+      b.classList.add('flag');b.textContent='🚩';
+    }
+    b.addEventListener('click',()=>openCell(cell.r,cell.c));
+    b.addEventListener('contextmenu',e=>{e.preventDefault();toggleFlag(cell.r,cell.c)});
+    boardEl.appendChild(b);
+  }
+}
+
+function openCell(r,c){
+  if(gameOver) return;
+  startTimer();
+  const cell=board[r][c];
+  if(cell.open||cell.flag) return;
+  if(cell.mine){
+    cell.open=true; gameOver=true; clearInterval(timer);
+    board.flat().filter(x=>x.mine).forEach(x=>x.open=true);
+    statusEl.textContent='💥 ¡Has pisado una mina! Pulsa “Nueva partida”.';
+    render(); return;
+  }
+  const stack=[cell];
+  while(stack.length){
+    const x=stack.pop();
+    if(x.open||x.flag||x.mine) continue;
+    x.open=true;
+    if(x.n===0) neighbors(x.r,x.c).forEach(y=>{if(!y.open&&!y.mine)stack.push(y)});
+  }
+  if(board.flat().filter(x=>!x.mine&&!x.open).length===0){
+    gameOver=true; clearInterval(timer);
+    statusEl.textContent='🎉 ¡Has ganado!';
+  }
+  render();
+}
+
+function toggleFlag(r,c){
+  if(gameOver) return;
+  startTimer();
+  const cell=board[r][c];
+  if(cell.open) return;
+  if(!cell.flag && flags>=MINES) return;
+  cell.flag=!cell.flag; flags += cell.flag?1:-1;
+  minesEl.textContent=MINES-flags;
+  render();
+}
+
+document.getElementById('reset').onclick=newGame;
+newGame();
+</script>
+</body>
+</html>
